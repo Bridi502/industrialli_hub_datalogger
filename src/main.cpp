@@ -5,10 +5,8 @@
 #include "muxCtrl.h"
 #include "isoOutputs.h"
 #include "anlgOut.h"
-#include "INA226.h"
+#include <INA226_WE.h>
 
-
-INA226 INA(0x45);
 #define I2C2_SCL PA9
 #define I2C2_SDA PA8
 #define ALRT_ISO PA10
@@ -17,7 +15,8 @@ INA226 INA(0x45);
 #define I2C_ADDRESS 0x40
 #define I2C_ADDRESS_ISO 0x45
 
-
+INA226_WE INA226_DUT_PWR = INA226_WE(I2C_ADDRESS);
+INA226_WE INA226_DUT_PWR_ISO = INA226_WE(I2C_ADDRESS_ISO);
 
 #define LED_DEBUG PB11
 shiftRegisterCtrl srCtrl;
@@ -27,7 +26,11 @@ anlgOut anlgOutputs;
 
 
 
+
+
 // put function declarations here:
+void displayResults();
+void displayResultsIso();
 
 void setup()
 {
@@ -36,6 +39,7 @@ void setup()
   pinMode(LED_DEBUG, OUTPUT);
   pinMode(ALRT_ISO, INPUT);
   pinMode(ALRT, INPUT);
+
 
 
   SerialUSB.begin(115200);
@@ -51,12 +55,20 @@ void setup()
   //Wire.setClock(400000L);
   Wire.begin();
 
-    if (!INA.begin() )
-  {
-    SerialUSB.println("could not connect. Fix and Reboot");
-  }
-  INA.setMaxCurrentShunt(1, 0.1);
+  INA226_DUT_PWR.init();
+  INA226_DUT_PWR_ISO.init();
 
+  INA226_DUT_PWR.setResistorRange(0.1, 1.00);
+  INA226_DUT_PWR_ISO.setResistorRange(0.002, 5.00);
+
+  INA226_DUT_PWR.setAverage(AVERAGE_1024);
+  INA226_DUT_PWR_ISO.setAverage(AVERAGE_1024);
+
+  INA226_DUT_PWR.setConversionTime(CONV_TIME_8244);
+  INA226_DUT_PWR_ISO.setConversionTime(CONV_TIME_8244);
+
+  INA226_DUT_PWR.waitUntilConversionCompleted(); 
+  INA226_DUT_PWR_ISO.waitUntilConversionCompleted(); 
 
 }
 
@@ -88,23 +100,78 @@ void loop()
 
   // delay(1000);
 
-  digitalWrite(LED_DEBUG, !digitalRead(LED_DEBUG));
+  
   // SerialUSB.println("Hello");
   // delay(100);
-  SerialUSB.println("\nBUS\tSHUNT\tCURRENT\tPOWER");
-  for (int i = 0; i < 20; i++)
-  {
-    SerialUSB.print(INA.getBusVoltage(), 3);
-    SerialUSB.print("\t");
-    SerialUSB.print(INA.getShuntVoltage_mV(), 3);
-    SerialUSB.print("\t");
-    SerialUSB.print(INA.getCurrent_mA(), 3);
-    SerialUSB.print("\t");
-    SerialUSB.print(INA.getPower_mW(), 3);
-    SerialUSB.println();
-    delay(1000);
-  }
+
+    INA226_DUT_PWR.readAndClearFlags(); // reads interrupt and overflow flags and deletes them 
+    displayResults();
+
+
+  
+      digitalWrite(LED_DEBUG, !digitalRead(LED_DEBUG));
+    INA226_DUT_PWR_ISO.readAndClearFlags(); // reads interrupt and overflow flags and deletes them 
+    displayResultsIso();
+  
+  delay(100);
+
+
 
 }
 
 // put function definitions here:
+
+
+void displayResults(){
+  float shuntVoltage_mV = 0.0;
+  float loadVoltage_V = 0.0;
+  float busVoltage_V = 0.0;
+  float current_mA = 0.0;
+  float power_mW = 0.0; 
+  
+  shuntVoltage_mV = INA226_DUT_PWR.getShuntVoltage_mV();
+  busVoltage_V = INA226_DUT_PWR.getBusVoltage_V();
+  current_mA = INA226_DUT_PWR.getCurrent_mA();
+  power_mW = INA226_DUT_PWR.getBusPower();
+  loadVoltage_V  = busVoltage_V + (shuntVoltage_mV/1000);
+    
+  SerialUSB.print("Shunt Voltage [mV]: "); SerialUSB.println(shuntVoltage_mV);
+  SerialUSB.print("Bus Voltage [V]: "); SerialUSB.println(busVoltage_V);
+  SerialUSB.print("Load Voltage [V]: "); SerialUSB.println(loadVoltage_V);
+  SerialUSB.print("Current[mA]: "); SerialUSB.println(current_mA);
+  SerialUSB.print("Bus Power [mW]: "); SerialUSB.println(power_mW);
+  if(!INA226_DUT_PWR.overflow){
+    SerialUSB.println("Values OK - no overflow");
+  }
+  else{
+    SerialUSB.println("Overflow! Choose higher current range");
+  }
+  SerialUSB.println();
+}
+
+void displayResultsIso(){
+  float shuntVoltage_mV = 0.0;
+  float loadVoltage_V = 0.0;
+  float busVoltage_V = 0.0;
+  float current_mA = 0.0;
+  float power_mW = 0.0; 
+  
+  shuntVoltage_mV = INA226_DUT_PWR_ISO.getShuntVoltage_mV();
+  busVoltage_V = INA226_DUT_PWR_ISO.getBusVoltage_V();
+  current_mA = INA226_DUT_PWR_ISO.getCurrent_mA();
+  power_mW = INA226_DUT_PWR_ISO.getBusPower();
+  loadVoltage_V  = busVoltage_V + (shuntVoltage_mV/1000);
+    
+  SerialUSB.print("Shunt Voltage Iso [mV]: "); SerialUSB.println(shuntVoltage_mV);
+  SerialUSB.print("Bus Voltage [V]: "); SerialUSB.println(busVoltage_V);
+  SerialUSB.print("Load Voltage [V]: "); SerialUSB.println(loadVoltage_V);
+  SerialUSB.print("Current[mA]: "); SerialUSB.println(current_mA);
+  SerialUSB.print("Bus Power [mW]: "); SerialUSB.println(power_mW);
+  if(!INA226_DUT_PWR_ISO.overflow){
+    SerialUSB.println("Values OK - no overflow");
+  }
+  else{
+    SerialUSB.println("Overflow! Choose higher current range");
+  }
+  SerialUSB.println();
+}
